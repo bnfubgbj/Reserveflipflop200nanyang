@@ -1207,6 +1207,17 @@
                             .catch(err => console.log('EmailJS:', err));
                     }
 
+                    // ถ้าพี่มอสจอง ส่งสำเนาให้น้องด้วย
+                    if (user === 'พี่มอส') {
+                        emailjs.send('service_xluswg4', 'template_bpb2lnr', {
+                            to_name: 'Punnamate',
+                            to_email: 'Punnamate.K@nanyang.co.th',
+                            channel: ch,
+                            items: itemsHtml,
+                            timestamp: ts
+                        }).catch(err => console.log('EmailJS CC:', err));
+                    }
+
                     // ส่ง alert หาผู้จัดการ
                     emailjs.send('service_xluswg4', 'template_bpb2lnr', {
                         to_name: 'ผู้จัดการ (Sathaphon)',
