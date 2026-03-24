@@ -5,9 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>ระบบการจองรองเท้าฟองน้ำ 200</title>
         <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-        <script>
-            emailjs.init('GxBv122rY1zWc1AHi');
-        </script>
+        <script>emailjs.init('GxBv122rY1zWc1AHi');</script>
     </head>
     <body>
         <style>
@@ -1156,7 +1154,7 @@
                         }).catch(err => console.log('Sheets:', err));
                     }
 
-                    // Send EmailJS confirmation
+                    // EmailJS
                     const emailMap = {
                         'น้องเฟิน': 'Napatsorn.p@nanyang.co.th',
                         'พี่เมย์':  'Anasthichai.P@nanyang.co.th',
@@ -1169,26 +1167,52 @@
                     };
                     const recipientEmail = emailMap[user];
                     const myEmail = 'Sathaphon.p@nanyang.co.th';
-                    const itemsSummary = pending.map(p => p.name + ' เบอร์' + p.z + ': ' + p.q + ' คู่').join(', ');
                     const totalQ2 = pending.reduce((s, p) => s + p.q, 0);
+                    const totalDoz2 = Math.round(totalQ2 / 12);
+
+                    // จัดกลุ่มตามสี
+                    const byColor = {};
+                    pending.forEach(p => {
+                        if (!byColor[p.name]) byColor[p.name] = [];
+                        byColor[p.name].push(p);
+                    });
+
+                    // สร้าง HTML table สำหรับ items
+                    let itemsHtml = '<table style="border-collapse:collapse;width:100%;margin:12px 0;">';
+                    itemsHtml += '<tr style="background:#f0f9ff;"><th style="padding:8px 12px;text-align:left;border:1px solid #bfdbfe;font-size:13px;">สี</th><th style="padding:8px 12px;text-align:center;border:1px solid #bfdbfe;font-size:13px;">เบอร์</th><th style="padding:8px 12px;text-align:right;border:1px solid #bfdbfe;font-size:13px;">คู่</th><th style="padding:8px 12px;text-align:right;border:1px solid #bfdbfe;font-size:13px;">โหล</th></tr>';
+                    Object.entries(byColor).forEach(([colorName, sizes]) => {
+                        sizes.forEach((s, i) => {
+                            itemsHtml += '<tr style="background:#fff;">';
+                            itemsHtml += '<td style="padding:7px 12px;border:1px solid #e5e7eb;font-size:13px;">' + (i === 0 ? colorName : '') + '</td>';
+                            itemsHtml += '<td style="padding:7px 12px;border:1px solid #e5e7eb;font-size:13px;text-align:center;">' + s.z + '</td>';
+                            itemsHtml += '<td style="padding:7px 12px;border:1px solid #e5e7eb;font-size:13px;text-align:right;font-weight:500;">' + s.q.toLocaleString() + '</td>';
+                            itemsHtml += '<td style="padding:7px 12px;border:1px solid #e5e7eb;font-size:13px;text-align:right;">' + s.doz + '</td>';
+                            itemsHtml += '</tr>';
+                        });
+                    });
+                    itemsHtml += '<tr style="background:#f0fdf4;"><td colspan="2" style="padding:8px 12px;border:1px solid #bfdbfe;font-weight:600;font-size:13px;">รวมทั้งหมด</td><td style="padding:8px 12px;border:1px solid #bfdbfe;text-align:right;font-weight:700;font-size:14px;">' + totalQ2.toLocaleString() + ' คู่</td><td style="padding:8px 12px;border:1px solid #bfdbfe;text-align:right;font-weight:600;font-size:13px;">' + totalDoz2 + ' โหล</td></tr>';
+                    itemsHtml += '</table>';
+
+                    const emailParams = {
+                        to_name: user,
+                        to_email: recipientEmail || myEmail,
+                        channel: ch,
+                        items: itemsHtml,
+                        timestamp: ts
+                    };
 
                     // ส่งหาคนจอง
                     if (recipientEmail) {
-                        emailjs.send('service_xluswg4', 'template_bpb2lnr', {
-                            to_name: user,
-                            to_email: recipientEmail,
-                            channel: ch,
-                            items: itemsSummary,
-                            timestamp: ts
-                        }).catch(err => console.log('EmailJS:', err));
+                        emailjs.send('service_xluswg4', 'template_bpb2lnr', emailParams)
+                            .catch(err => console.log('EmailJS:', err));
                     }
 
                     // ส่ง alert หาผู้จัดการ
                     emailjs.send('service_xluswg4', 'template_bpb2lnr', {
-                        to_name: 'ผู้จัดการ',
+                        to_name: 'ผู้จัดการ (Sathaphon)',
                         to_email: myEmail,
-                        channel: '🔔 แจ้งเตือน: ' + user + ' (' + ch + ') จองใหม่',
-                        items: itemsSummary,
+                        channel: '🔔 ' + user + ' (' + ch + ') จองใหม่',
+                        items: itemsHtml,
                         timestamp: ts
                     }).catch(err => console.log('EmailJS alert:', err));
                 },
