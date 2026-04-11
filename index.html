@@ -1138,7 +1138,7 @@
                         td.innerHTML = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong> ส่งเข้าระบบแล้วครับ';
                     t.style.display = 'flex';
                     // Send to Google Sheets
-                    const scriptUrl = 'https://script.google.com/macros/s/AKfycbxgHqVQHzxpXPoBkfcQ_F5GLxNkveB8ivjwP597YszE34BfTpwOzEOUfj1YEnMrfohysA/exec';
+                    const scriptUrl = 'https://script.google.com/macros/s/AKfycbywnHDxi0qF2L9CRqMtwAP1TErECD31Ed7D-yoOGJkwNm8P0o6XHQZ6-UTd9sxhpX1jXQ/exec';
                     const lastTs = orders.length > 0 ? orders[orders.length - 1].ts : '';
                     const submission = orders.filter(o => o.ts === lastTs);
                     if (submission.length > 0) {
