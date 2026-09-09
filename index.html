@@ -1130,29 +1130,68 @@
                     this.render();
                     this.bar();
                     this.dash();
-                    // Show success modal
+                    // Toast: ขึ้นสถานะ "กำลังส่ง..." ก่อน — ยังไม่ถือว่าสำเร็จจนกว่าจะได้รับการยืนยันจริงจาก Google Sheets
                     const t = document.getElementById('toast');
                     const td = document.getElementById('toastDetail');
                     const totalQ = pending.reduce( (s, p) => s + p.q, 0);
                     if (td)
-                        td.innerHTML = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong> ส่งเข้าระบบแล้วครับ';
+                        td.innerHTML = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong> กำลังส่งเข้าระบบ...';
                     t.style.display = 'flex';
+                    t.style.background = '';
                     // Send to Google Sheets
                     const scriptUrl = 'https://script.google.com/macros/s/AKfycbxEntfsat0I3D3g-Ub-b9nb3rBjZB6fY7MnRiNubgqFG5rccBokVnpsUiqBW1fVnQrjMQ/exec';
                     const lastSubId = orders.length > 0 ? orders[orders.length - 1].subId : '';
                     const submission = orders.filter(o => o.subId === lastSubId);
-                    if (submission.length > 0) {
+                    // สำรองไว้ใน localStorage ด้วย เผื่อยิงไม่สำเร็จจริงๆ จะได้กู้คืนได้ ไม่หายเงียบๆ
+                    const backupKey = 'pendingSheetSync';
+                    const saveBackup = () => {
+                        try {
+                            const q = JSON.parse(localStorage.getItem(backupKey) || '[]');
+                            q.push({
+                                subId,
+                                submission,
+                                ts: new Date().toISOString()
+                            });
+                            localStorage.setItem(backupKey, JSON.stringify(q));
+                        } catch (e) {}
+                    };
+                    const clearBackup = () => {
+                        try {
+                            const q = JSON.parse(localStorage.getItem(backupKey) || '[]').filter(x => x.subId !== subId);
+                            localStorage.setItem(backupKey, JSON.stringify(q));
+                        } catch (e) {}
+                    };
+                    const sendToSheets = (attempt) => {
+                        if (submission.length === 0)
+                            return;
+                        // หมายเหตุ: ไม่ใช้ mode:'no-cors' และไม่ตั้ง Content-Type เป็น application/json
+                        // เพื่อให้ browser ไม่ทำ CORS preflight (ซึ่ง Apps Script รับมือไม่ได้) และยังอ่านผลจริงจาก server ได้
                         fetch(scriptUrl, {
                             method: 'POST',
-                            mode: 'no-cors',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
                             body: JSON.stringify({
                                 orders: submission
                             })
-                        }).catch(err => console.log('Sheets:', err));
+                        }).then(res => {
+                            if (!res.ok)
+                                throw new Error('HTTP ' + res.status);
+                            clearBackup();
+                            if (td)
+                                td.innerHTML = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong> ส่งเข้าระบบแล้วครับ ✅';
+                        }).catch(err => {
+                            console.log('Sheets:', err, 'attempt', attempt);
+                            if (attempt < 3) {
+                                setTimeout( () => sendToSheets(attempt + 1), 1500 * attempt);
+                            } else {
+                                saveBackup();
+                                if (td)
+                                    td.innerHTML = user + ' (' + ch + ')<br><strong style="color:#c0392b">⚠️ ส่งเข้าระบบไม่สำเร็จ!</strong><br>กรุณาแจ้งผู้ดูแลระบบ หรือลองกดจองใหม่อีกครั้ง';
+                                t.style.background = '#fff0f0';
+                            }
+                        }
+                        );
                     }
+                    ;
+                    sendToSheets(1);
 
                     // Email ส่งผ่าน Apps Script อัตโนมัติแล้ว
                 },
