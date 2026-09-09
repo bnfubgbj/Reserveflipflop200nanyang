@@ -4,7 +4,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>ระบบการจองรองเท้าฟองน้ำ 200</title>
-
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     </head>
     <body>
         <style>
@@ -653,7 +653,10 @@
                         สี &nbsp;|&nbsp;<span id="tP">0</span>
                         คู่
                     </div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                        <button class="xbtn" onclick="S.downloadTemplate()">ดาวน์โหลด Template</button>
+                        <button class="xbtn" onclick="document.getElementById('importFile').click()">นำเข้า Excel</button>
+                        <input type="file" id="importFile" accept=".xlsx,.xls" style="display:none;" onchange="S.importExcel(this)"/>
                         <button class="sbtn" onclick="S.submit()">ส่งการจอง</button>
                     </div>
                 </div>
@@ -996,6 +999,155 @@
                     );
                     document.getElementById('tC').textContent = c;
                     document.getElementById('tP').textContent = fmt(p);
+                },
+                downloadTemplate() {
+                    const list = [...MAIN, ...(this.isExport ? SPEC : [])];
+                    const rows = [];
+                    rows.push(['Template จองรองเท้าฟองน้ำ 200']);
+                    rows.push(['กรอกจำนวนคู่ในตารางด้านล่าง ต้องเป็นเลขที่หารด้วย 12 ลงตัวเท่านั้น (12, 24, 36, 48, ...) ห้ามแก้ไขชื่อสี/หัวตาราง']);
+                    rows.push([]);
+                    rows.push(['สี', ...SZ]);
+                    list.forEach(p => {
+                        rows.push([p.name, ...SZ.map( () => 0)]);
+                    }
+                    );
+                    const ws = XLSX.utils.aoa_to_sheet(rows);
+                    ws['!cols'] = [{
+                        wch: 20
+                    }, ...SZ.map( () => ({
+                        wch: 8
+                    }))];
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'จองฟองน้ำ200');
+                    const raw = document.getElementById('usel').value;
+                    const uname = raw ? raw.split('|')[0] : 'template';
+                    XLSX.writeFile(wb, `template_${uname}.xlsx`);
+                },
+                importExcel(input) {
+                    const file = input.files && input.files[0];
+                    if (!file)
+                        return;
+                    const raw = document.getElementById('usel').value;
+                    if (!raw) {
+                        alert('กรุณาเลือกชื่อผู้จองก่อนอัปโหลดไฟล์ครับ');
+                        input.value = '';
+                        return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const wb = XLSX.read(data, {
+                                type: 'array'
+                            });
+                            const ws = wb.Sheets[wb.SheetNames[0]];
+                            const rows = XLSX.utils.sheet_to_json(ws, {
+                                header: 1,
+                                defval: ''
+                            });
+                            // หาแถวหัวตาราง (คอลัมน์แรกคือ "สี")
+                            let headerRowIdx = -1;
+                            for (let i = 0; i < rows.length; i++) {
+                                if (String(rows[i][0] || '').trim() === 'สี') {
+                                    headerRowIdx = i;
+                                    break;
+                                }
+                            }
+                            if (headerRowIdx === -1) {
+                                alert('ไม่พบหัวตาราง (แถวที่ขึ้นต้นด้วย "สี") ในไฟล์ กรุณาใช้ Template ที่ดาวน์โหลดจากระบบ');
+                                input.value = '';
+                                return;
+                            }
+                            const headerRow = rows[headerRowIdx];
+                            // map ตำแหน่งคอลัมน์ -> ไซส์
+                            const colToSize = {};
+                            for (let c = 1; c < headerRow.length; c++) {
+                                const label = String(headerRow[c] || '').trim();
+                                if (SZ.includes(label))
+                                    colToSize[c] = label;
+                            }
+                            if (Object.keys(colToSize).length === 0) {
+                                alert('ไม่พบหัวคอลัมน์ไซส์ที่ตรงกับระบบ (8.5, 9, 9.5, 10, 10.5, 11) กรุณาใช้ Template ที่ดาวน์โหลดจากระบบ');
+                                input.value = '';
+                                return;
+                            }
+                            const list = [...MAIN, ...(this.isExport ? SPEC : [])];
+                            const nameMap = {};
+                            list.forEach(p => {
+                                nameMap[p.name.trim()] = p.id;
+                            }
+                            );
+                            const notFound = [];
+                            const badNumbers = [];
+                            const toApply = [];
+                            for (let r = headerRowIdx + 1; r < rows.length; r++) {
+                                const row = rows[r];
+                                const rawName = String(row[0] || '').trim();
+                                if (!rawName)
+                                    continue;
+                                if (rawName === 'รวม' || rawName.startsWith('รวม'))
+                                    continue;
+                                if (rawName.startsWith('ตัวอย่าง'))
+                                    continue;
+                                const pid = nameMap[rawName];
+                                if (!pid) {
+                                    notFound.push(rawName);
+                                    continue;
+                                }
+                                Object.entries(colToSize).forEach( ([col,z]) => {
+                                    const cell = row[col];
+                                    if (cell === '' || cell === undefined || cell === null)
+                                        return;
+                                    const num = Number(cell);
+                                    if (isNaN(num) || num < 0) {
+                                        badNumbers.push(`${rawName} เบอร์ ${z}: "${cell}" ไม่ใช่ตัวเลขที่ถูกต้อง`);
+                                        return;
+                                    }
+                                    if (num > 0 && num % 12 !== 0) {
+                                        badNumbers.push(`${rawName} เบอร์ ${z}: ${num} คู่ (ต้องหารด้วย 12 ลงตัว)`);
+                                        return;
+                                    }
+                                    toApply.push({
+                                        pid,
+                                        z,
+                                        num
+                                    });
+                                }
+                                );
+                            }
+                            if (notFound.length > 0 || badNumbers.length > 0) {
+                                let msg = '';
+                                if (notFound.length > 0)
+                                    msg += `⚠️ ไม่พบชื่อสีในระบบ (${notFound.length} รายการ):\n` + notFound.slice(0, 8).join(', ') + '\n\n';
+                                if (badNumbers.length > 0)
+                                    msg += `⚠️ พบข้อมูลไม่ถูกต้อง (${badNumbers.length} รายการ):\n` + badNumbers.slice(0, 8).join('\n');
+                                msg += '\n\nกรุณาแก้ไขไฟล์แล้วอัปโหลดใหม่ (ยังไม่มีการนำเข้าข้อมูลใดๆ)';
+                                alert(msg);
+                                input.value = '';
+                                return;
+                            }
+                            if (toApply.length === 0) {
+                                alert('ไม่พบจำนวนที่ต้องนำเข้าเลยครับ (ไฟล์ว่างหรือกรอกเป็น 0 ทั้งหมด)');
+                                input.value = '';
+                                return;
+                            }
+                            // ทุกอย่างผ่านการตรวจสอบแล้ว เติมค่าลงตาราง
+                            toApply.forEach(({pid, z, num}) => {
+                                Q[pid + '_' + z] = num;
+                            }
+                            );
+                            this.render();
+                            this.bar();
+                            input.value = '';
+                            alert(`นำเข้าสำเร็จ ${toApply.length} รายการ กรุณาตรวจสอบตัวเลขในตาราง แล้วกด "ส่งการจอง" เพื่อยืนยันอีกครั้ง`);
+                        } catch (err) {
+                            console.log('importExcel error:', err);
+                            alert('ไม่สามารถอ่านไฟล์นี้ได้ กรุณาตรวจสอบว่าเป็นไฟล์ Excel (.xlsx) ที่ถูกต้อง');
+                            input.value = '';
+                        }
+                    }
+                    ;
+                    reader.readAsArrayBuffer(file);
                 },
                 _pendingUser: null,
                 _pendingCh: null,
