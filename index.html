@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- VERSION 57 : 6 ต.ค. 2569 — แจ้งผลการจองตามจริง + ไม่แนบรูปไปกับข้อมูลจอง -->
 <html lang="th">
     <head>
         <meta charset="UTF-8">
@@ -742,10 +743,11 @@
         </div>
         <div class="toast" id="toast" style="display:none;">
             <div class="toast-box">
-                <div class="toast-icon">✅</div>
-                <div class="toast-title">การจองสมบูรณ์!</div>
-                <div class="toast-sub" id="toastDetail">ระบบได้รับการจองของคุณเรียบร้อยแล้วครับ</div>
-                <button class="toast-close" onclick="document.getElementById('toast').style.display='none'">รับทราบ</button>
+                <div class="toast-icon" id="toastIcon">⏳</div>
+                <div class="toast-title" id="toastTitle">กำลังส่งข้อมูล...</div>
+                <div class="toast-sub" id="toastDetail"></div>
+                <button class="toast-close" id="toastRetry" style="display:none;background:#c0392b;margin-bottom:8px;">ส่งอีกครั้ง</button>
+                <button class="toast-close" id="toastClose" style="display:none;" onclick="document.getElementById('toast').style.display='none'">รับทราบ</button>
             </div>
         </div>
         <div class="terr" id="terr" onclick="if(event.target===this)this.style.display='none'">
@@ -1302,23 +1304,71 @@
                     this.render();
                     this.bar();
                     this.dash();
-                    // Toast: ขึ้นสถานะ "กำลังส่ง..." ก่อน — ยังไม่ถือว่าสำเร็จจนกว่าจะได้รับการยืนยันจริงจาก Google Sheets
+                    // ===== แจ้งผลการส่ง: ขึ้น "สมบูรณ์" ก็ต่อเมื่อ Google Sheets ยืนยันกลับมาแล้วเท่านั้น =====
                     const t = document.getElementById('toast');
                     const td = document.getElementById('toastDetail');
+                    const tIcon = document.getElementById('toastIcon');
+                    const tTitle = document.getElementById('toastTitle');
+                    const tRetry = document.getElementById('toastRetry');
+                    const tClose = document.getElementById('toastClose');
                     const totalQ = pending.reduce( (s, p) => s + p.q, 0);
-                    if (td)
-                        td.innerHTML = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong> กำลังส่งเข้าระบบ...';
-                    t.style.display = 'flex';
-                    t.style.background = '';
+                    const who = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong>';
+                    const setToast = (state, extra) => {
+                        extra = extra || '';
+                        if (state === 'sending') {
+                            tIcon.textContent = '⏳';
+                            tTitle.textContent = 'กำลังส่งข้อมูล...';
+                            tTitle.style.color = '#b45309';
+                            td.innerHTML = who + '<br>กรุณารอสักครู่ <strong>อย่าปิดหน้านี้</strong>' + extra;
+                            tRetry.style.display = 'none';
+                            tClose.style.display = 'none';
+                        } else if (state === 'ok') {
+                            tIcon.textContent = '✅';
+                            tTitle.textContent = 'การจองสมบูรณ์!';
+                            tTitle.style.color = '#16a34a';
+                            td.innerHTML = who + '<br>บันทึกเข้าระบบเรียบร้อยแล้วครับ';
+                            tRetry.style.display = 'none';
+                            tClose.textContent = 'รับทราบ';
+                            tClose.style.display = '';
+                        } else {
+                            tIcon.textContent = '❌';
+                            tTitle.textContent = 'ส่งไม่สำเร็จ!';
+                            tTitle.style.color = '#c0392b';
+                            td.innerHTML = who + '<br><strong style="color:#c0392b">ข้อมูลยังไม่เข้าระบบ</strong><br>กด "ส่งอีกครั้ง" ถ้ายังไม่ได้ กรุณาแจ้งผู้ดูแลระบบ' + extra;
+                            tRetry.style.display = '';
+                            tClose.textContent = 'ปิด';
+                            tClose.style.display = '';
+                        }
+                        t.style.display = 'flex';
+                    };
+                    // เตือนถ้าจะปิดหน้าระหว่างที่ยังส่งไม่เสร็จ
+                    if (!window.__sendGuard) {
+                        window.__sendGuard = true;
+                        window.addEventListener('beforeunload', ev => {
+                            if (window.__sending) {
+                                ev.preventDefault();
+                                ev.returnValue = '';
+                            }
+                        });
+                    }
                     // Send to Google Sheets
                     const scriptUrl = 'https://script.google.com/macros/s/AKfycbxEntfsat0I3D3g-Ub-b9nb3rBjZB6fY7MnRiNubgqFG5rccBokVnpsUiqBW1fVnQrjMQ/exec';
-                    const lastSubId = orders.length > 0 ? orders[orders.length - 1].subId : '';
-                    const submission = orders.filter(o => o.subId === lastSubId);
-                    // สำรองไว้ใน localStorage ด้วย เผื่อยิงไม่สำเร็จจริงๆ จะได้กู้คืนได้ ไม่หายเงียบๆ
+                    // ส่งเฉพาะข้อมูลที่จำเป็น — ไม่แนบรูปสินค้าไปด้วย (เดิมแนบรูปทุกแถว ทำให้ข้อมูลหนักหลาย MB)
+                    const submission = orders.filter(o => o.subId === subId).map(o => ({
+                        user: o.user,
+                        ch: o.ch,
+                        name: o.name,
+                        z: o.z,
+                        q: o.q,
+                        doz: o.doz,
+                        ts_ms: o.ts_ms,
+                        subId: o.subId
+                    }));
+                    // สำรองไว้ใน localStorage เผื่อส่งไม่สำเร็จ
                     const backupKey = 'pendingSheetSync';
                     const saveBackup = () => {
                         try {
-                            const q = JSON.parse(localStorage.getItem(backupKey) || '[]');
+                            const q = JSON.parse(localStorage.getItem(backupKey) || '[]').filter(x => x.subId !== subId);
                             q.push({
                                 subId,
                                 submission,
@@ -1336,8 +1386,10 @@
                     const sendToSheets = (attempt) => {
                         if (submission.length === 0)
                             return;
+                        window.__sending = true;
+                        setToast('sending', attempt > 1 ? '<br><span style="font-size:11px;color:#999">ลองส่งครั้งที่ ' + attempt + '</span>' : '');
                         // หมายเหตุ: ไม่ใช้ mode:'no-cors' และไม่ตั้ง Content-Type เป็น application/json
-                        // เพื่อให้ browser ไม่ทำ CORS preflight (ซึ่ง Apps Script รับมือไม่ได้) และยังอ่านผลจริงจาก server ได้
+                        // เพื่อให้ browser ไม่ทำ CORS preflight และอ่านผลจริงจาก server ได้
                         fetch(scriptUrl, {
                             method: 'POST',
                             body: JSON.stringify({
@@ -1346,23 +1398,30 @@
                         }).then(res => {
                             if (!res.ok)
                                 throw new Error('HTTP ' + res.status);
+                            return res.text();
+                        }).then(txt => {
+                            let r = null;
+                            try {
+                                r = JSON.parse(txt);
+                            } catch (e) {}
+                            // ต้องได้ status:"ok" จาก Apps Script เท่านั้นจึงถือว่าสำเร็จ
+                            if (!r || r.status !== 'ok')
+                                throw new Error(r && r.message ? r.message : 'ระบบตอบกลับไม่ถูกต้อง');
+                            window.__sending = false;
                             clearBackup();
-                            if (td)
-                                td.innerHTML = user + ' (' + ch + ')<br>รวม <strong>' + totalQ.toLocaleString() + ' คู่</strong> ส่งเข้าระบบแล้วครับ ✅';
+                            setToast('ok');
                         }).catch(err => {
                             console.log('Sheets:', err, 'attempt', attempt);
                             if (attempt < 3) {
                                 setTimeout( () => sendToSheets(attempt + 1), 1500 * attempt);
                             } else {
+                                window.__sending = false;
                                 saveBackup();
-                                if (td)
-                                    td.innerHTML = user + ' (' + ch + ')<br><strong style="color:#c0392b">⚠️ ส่งเข้าระบบไม่สำเร็จ!</strong><br>กรุณาแจ้งผู้ดูแลระบบ หรือลองกดจองใหม่อีกครั้ง';
-                                t.style.background = '#fff0f0';
+                                setToast('fail', '<br><span style="font-size:11px;color:#999">' + String(err && err.message || err).slice(0, 120) + '</span>');
                             }
-                        }
-                        );
-                    }
-                    ;
+                        });
+                    };
+                    tRetry.onclick = () => sendToSheets(1);
                     sendToSheets(1);
 
                     // Email ส่งผ่าน Apps Script อัตโนมัติแล้ว
